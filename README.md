@@ -65,16 +65,6 @@ Campos padrão:
 - telefone;
 - texto e URL do site.
 
-Valores de demonstração configurados no código:
-
-```text
-Nome: Leandro Barbosa de Lima
-Cargo/função: Gerente II
-Sigla: GM/IG/DRH/CAP/GPP
-Setor: Gerência de Pagamento de Pessoal
-Telefone: +55 (21) 2976-6187
-```
-
 ### Assinatura institucional
 
 Campos:
