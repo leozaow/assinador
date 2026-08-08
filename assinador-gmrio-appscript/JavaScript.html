@@ -1,0 +1,592 @@
+<script>
+  'use strict';
+
+  const $ = function (id) { return document.getElementById(id); };
+  const appState = {
+    ready: false,
+    mode: 'personal',
+    email: '',
+    units: [],
+    config: null,
+    lastRegistered: null,
+    toastTimer: null
+  };
+
+  const fictitiousPresets = {
+    equipe: ['Equipe Exemplo', 'Atendimento institucional fictício'],
+    servico: ['Serviço Exemplo', 'Descrição demonstrativa do serviço'],
+    'ponto-focal': ['Ponto Focal Exemplo', 'Orientação e suporte em atividade fictícia']
+  };
+
+  window.addEventListener('load', initialize);
+
+  function initialize() {
+    bindStaticEvents();
+    protectPreview();
+
+    if (!window.google || !google.script || !google.script.run) {
+      showFatalAccessError('Esta aplicação só funciona quando aberta pela URL oficial do Web App do Google Apps Script.');
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(onBootstrapSuccess)
+      .withFailureHandler(function (error) {
+        showFatalAccessError(errorMessage(error));
+      })
+      .getBootstrapData();
+  }
+
+  function onBootstrapSuccess(data) {
+    appState.ready = true;
+    appState.email = data.email;
+    appState.units = Array.isArray(data.units) ? data.units : [];
+    appState.config = data.config;
+
+    $('userBadge').textContent = data.email;
+    $('gmLogoPreview').src = data.config.logoUrl;
+    $('logoLink').value = data.config.defaultLogoLink;
+    $('siteUrl').value = data.config.defaultSiteUrl;
+    $('siteText').value = data.config.defaultSiteText;
+    $('color').value = data.config.defaultColor;
+
+    buildUnitSuggestions();
+    buildSocialControls();
+    bindDynamicInputs();
+    render();
+
+    $('copy').disabled = false;
+    document.querySelector('main').setAttribute('aria-busy', 'false');
+  }
+
+  function bindStaticEvents() {
+    $('tabPersonal').addEventListener('click', function () { setMode('personal'); });
+    $('tabSector').addEventListener('click', function () { setMode('sector'); });
+    $('copy').addEventListener('click', registerAndCopy);
+    $('closeModal').addEventListener('click', closeModal);
+    $('retryCopy').addEventListener('click', retryLastCopy);
+
+    document.querySelectorAll('[data-preset]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        const preset = fictitiousPresets[button.dataset.preset];
+        $('sectorTitle').value = preset[0];
+        $('description').value = preset[1];
+        $('sectorAcronym').value = 'GM/EXEMPLO/UA1';
+        $('sectorUnit').value = 'Unidade Administrativa Exemplo';
+        render();
+      });
+    });
+
+    ['phone1', 'phone2', 'phone3', 'phone4'].forEach(function (id) {
+      $(id).addEventListener('input', function (event) {
+        event.target.value = event.target.value.replace(/\D/g, '').slice(0, 9);
+        render();
+      });
+    });
+
+    setupUnitPair('acronym', 'unit');
+    setupUnitPair('sectorAcronym', 'sectorUnit');
+  }
+
+  function bindDynamicInputs() {
+    document.querySelectorAll('input').forEach(function (input) {
+      if (!input.dataset.renderBound) {
+        input.addEventListener('input', render);
+        input.addEventListener('change', render);
+        input.dataset.renderBound = 'true';
+      }
+    });
+  }
+
+  function setMode(next) {
+    appState.mode = next;
+    const personal = next === 'personal';
+    $('tabPersonal').classList.toggle('on', personal);
+    $('tabSector').classList.toggle('on', !personal);
+    $('tabPersonal').setAttribute('aria-selected', String(personal));
+    $('tabSector').setAttribute('aria-selected', String(!personal));
+    $('personalFields').classList.toggle('hide', !personal);
+    $('sectorFields').classList.toggle('hide', personal);
+    $('presets').classList.toggle('hide', personal);
+    $('formTitle').textContent = personal ? 'Dados da pessoa' : 'Identificação institucional';
+    $('formHelp').textContent = personal
+      ? 'Preencha os dados da assinatura individual.'
+      : 'Identifique uma equipe, serviço ou ponto focal.';
+    render();
+  }
+
+  function buildUnitSuggestions() {
+    const acronymList = $('unitAcronyms');
+    const nameList = $('unitNames');
+    acronymList.replaceChildren();
+    nameList.replaceChildren();
+
+    appState.units.forEach(function (unit) {
+      const acronymOption = document.createElement('option');
+      acronymOption.value = unit.acronym;
+      acronymOption.label = unit.name;
+      acronymList.appendChild(acronymOption);
+
+      const nameOption = document.createElement('option');
+      nameOption.value = unit.name;
+      nameOption.label = unit.acronym;
+      nameList.appendChild(nameOption);
+    });
+  }
+
+  function setupUnitPair(acronymId, nameId) {
+    const syncFromAcronym = function () {
+      const value = normalizeLookup($(acronymId).value);
+      const match = appState.units.find(function (unit) {
+        return normalizeLookup(unit.acronym) === value;
+      });
+      if (match) $(nameId).value = match.name;
+      render();
+    };
+
+    const syncFromName = function () {
+      const value = normalizeLookup($(nameId).value);
+      const match = appState.units.find(function (unit) {
+        return normalizeLookup(unit.name) === value;
+      });
+      if (match) $(acronymId).value = match.acronym;
+      render();
+    };
+
+    $(acronymId).addEventListener('input', syncFromAcronym);
+    $(acronymId).addEventListener('change', syncFromAcronym);
+    $(nameId).addEventListener('input', syncFromName);
+    $(nameId).addEventListener('change', syncFromName);
+  }
+
+  function normalizeLookup(value) {
+    return String(value || '').trim().toLocaleLowerCase('pt-BR');
+  }
+
+  function buildSocialControls() {
+    const container = $('socials');
+    container.replaceChildren();
+
+    appState.config.socials.forEach(function (social) {
+      const row = document.createElement('div');
+      row.className = 'social';
+
+      const checkbox = document.createElement('input');
+      checkbox.id = 'show-' + social.key;
+      checkbox.type = 'checkbox';
+      checkbox.checked = true;
+      checkbox.title = 'Exibir ' + social.label;
+
+      const image = document.createElement('img');
+      image.src = social.iconUrl;
+      image.alt = '';
+
+      const strong = document.createElement('strong');
+      strong.textContent = social.label;
+
+      const label = document.createElement('label');
+      const caption = document.createElement('span');
+      caption.textContent = 'Link de destino';
+      const input = document.createElement('input');
+      input.id = 'url-' + social.key;
+      input.type = 'url';
+      input.maxLength = 300;
+      input.value = social.defaultUrl;
+      input.required = true;
+
+      label.append(caption, input);
+      row.append(checkbox, image, strong, label);
+      container.appendChild(row);
+    });
+  }
+
+  function collectPayload(validate) {
+    const personal = appState.mode === 'personal';
+    const phones = ['phone1', 'phone2', 'phone3', 'phone4'].map(function (id, index) {
+      return {
+        digits: $(id).value.replace(/\D/g, ''),
+        description: $('phoneDescription' + (index + 1)).value.trim()
+      };
+    });
+
+    const payload = {
+      mode: appState.mode,
+      title: personal ? $('name').value : $('sectorTitle').value,
+      secondLine: personal ? $('role').value : $('description').value,
+      acronym: personal ? $('acronym').value : $('sectorAcronym').value,
+      unit: personal ? $('unit').value : $('sectorUnit').value,
+      phones: phones,
+      siteText: $('siteText').value,
+      siteUrl: $('siteUrl').value,
+      logoLink: $('logoLink').value,
+      color: $('color').value,
+      showUnit: $('showUnit').checked,
+      socials: appState.config ? appState.config.socials.map(function (social) {
+        return {
+          key: social.key,
+          enabled: $('show-' + social.key).checked,
+          url: $('url-' + social.key).value
+        };
+      }) : [],
+      requestId: createRequestId()
+    };
+
+    return { payload: payload, errors: validate ? validatePayload(payload) : [] };
+  }
+
+  function validatePayload(payload) {
+    document.querySelectorAll('input.invalid').forEach(function (input) {
+      input.classList.remove('invalid');
+    });
+
+    const errors = [];
+    const fieldRules = [
+      [appState.mode === 'personal' ? 'name' : 'sectorTitle', payload.title, 2, 'Informe o nome ou título.'],
+      [appState.mode === 'personal' ? 'role' : 'description', payload.secondLine, 2, 'Informe o cargo ou descrição.'],
+      [appState.mode === 'personal' ? 'acronym' : 'sectorAcronym', payload.acronym, 1, 'Informe a sigla.'],
+      [appState.mode === 'personal' ? 'unit' : 'sectorUnit', payload.unit, 1, 'Informe o setor.'],
+      ['siteText', payload.siteText, 2, 'Informe o texto do site.']
+    ];
+
+    fieldRules.forEach(function (rule) {
+      if (String(rule[1]).trim().length < rule[2]) addFieldError(rule[0], rule[3], errors);
+    });
+
+    if (![8, 9].includes(payload.phones[0].digits.length)) {
+      addFieldError('phone1', 'O telefone principal precisa ter 8 ou 9 dígitos.', errors);
+    }
+
+    payload.phones.slice(1).forEach(function (phone, index) {
+      if (phone.digits && ![5, 8, 9].includes(phone.digits.length)) {
+        addFieldError('phone' + (index + 2), 'Telefone adicional ' + (index + 2) + ': use 5, 8 ou 9 dígitos.', errors);
+      }
+      if (!phone.digits && phone.description) {
+        addFieldError('phone' + (index + 2), 'Informe o telefone adicional ' + (index + 2) + ' ou apague sua descrição.', errors);
+      }
+    });
+
+    if (!isRioUrl(payload.siteUrl)) addFieldError('siteUrl', 'O link do site deve usar HTTPS e domínio terminado em .rio.', errors);
+    if (!isRioUrl(payload.logoLink)) addFieldError('logoLink', 'O link da logo deve usar HTTPS e domínio terminado em .rio.', errors);
+
+    payload.socials.forEach(function (social) {
+      if (!social.enabled) return;
+      const rule = social.key === 'site' ? 'rio' : social.key + '.com';
+      const expected = social.key === 'youtube' ? 'youtube.com' :
+        social.key === 'linkedin' ? 'linkedin.com' :
+        social.key === 'instagram' ? 'instagram.com' :
+        social.key === 'facebook' ? 'facebook.com' :
+        social.key === 'x' ? 'x.com' : rule;
+      const valid = expected === 'rio' ? isRioUrl(social.url) : isAllowedHost(social.url, expected);
+      if (!valid) addFieldError('url-' + social.key, 'O link de ' + social.key + ' deve pertencer a ' + expected + '.', errors);
+    });
+
+    return errors;
+  }
+
+  function addFieldError(id, message, errors) {
+    const field = $(id);
+    if (field) field.classList.add('invalid');
+    errors.push(message);
+  }
+
+  function isRioUrl(value) {
+    try {
+      const parsed = new URL(String(value).trim());
+      return parsed.protocol === 'https:' && (parsed.hostname === 'rio' || parsed.hostname.endsWith('.rio'));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function isAllowedHost(value, domain) {
+    try {
+      const parsed = new URL(String(value).trim());
+      return parsed.protocol === 'https:' && (parsed.hostname === domain || parsed.hostname.endsWith('.' + domain));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function render() {
+    if (!appState.config) return;
+    const result = collectPayload(true);
+    const data = result.payload;
+    const color = /^#[0-9a-f]{6}$/i.test(data.color) ? data.color : appState.config.defaultColor;
+    document.documentElement.style.setProperty('--rio', color);
+
+    const primaryDigits = data.phones[0].digits;
+    const phones = data.phones.map(function (phone, index) {
+      const digits = phone.digits;
+      if (!digits) return null;
+      if (index === 0 && ![8, 9].includes(digits.length)) return null;
+      if (index > 0 && ![5, 8, 9].includes(digits.length)) return null;
+      const isExtension = index > 0 && digits.length === 5;
+      const completeDigits = isExtension ? primaryDigits.slice(0, 3) + digits : digits;
+      return {
+        numberDisplay: '+55 (21) ' + formatPhone(completeDigits, isExtension),
+        description: phone.description,
+        tel: '+5521' + completeDigits
+      };
+    }).filter(Boolean);
+
+    const socialHtml = appState.config.socials.map(function (definition) {
+      const current = data.socials.find(function (item) { return item.key === definition.key; });
+      if (!current || !current.enabled) return '';
+      const allowed = definition.key === 'site'
+        ? isRioUrl(current.url)
+        : isAllowedHost(current.url, socialDomain(definition.key));
+      if (!allowed) return '';
+      return '<td style="padding:0 4px"><a href="' + escapeAttribute(current.url) + '" target="_blank" rel="noopener noreferrer">' +
+        '<img src="' + escapeAttribute(definition.iconUrl) + '" width="24" height="24" alt="' + escapeAttribute(definition.label) + '" style="display:block;border:0"></a></td>';
+    }).join('');
+
+    const phoneHtml = phones.map(function (phone) {
+      return '<div style="font-size:12px;line-height:18px"><a href="tel:' + escapeAttribute(phone.tel) + '" style="color:' + color + ';text-decoration:none">' + escapeHtml(phone.numberDisplay) + '</a>' +
+        (phone.description ? ' - ' + escapeHtml(phone.description) : '') + '</div>';
+    }).join('');
+
+    const safeSiteUrl = isRioUrl(data.siteUrl) ? data.siteUrl : appState.config.defaultSiteUrl;
+    const safeLogoLink = isRioUrl(data.logoLink) ? data.logoLink : appState.config.defaultLogoLink;
+
+    $('signature').innerHTML = '<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;color:' + color + '">' +
+      '<tr><td style="width:116px;padding:0 18px 0 0;vertical-align:middle;text-align:center">' +
+      '<a href="' + escapeAttribute(safeLogoLink) + '" target="_blank" rel="noopener noreferrer"><img src="' + escapeAttribute(appState.config.logoUrl) + '" width="105" alt="Guarda Municipal do Rio de Janeiro" style="display:block;width:105px;height:auto;border:0"></a></td>' +
+      '<td style="width:390px;vertical-align:middle">' +
+      '<div style="font-size:20px;line-height:23px;font-weight:700;color:' + color + '">' + escapeHtml(data.title) + '</div>' +
+      '<div style="font-size:12px;line-height:17px">' + escapeHtml(data.secondLine) + '</div>' +
+      '<div style="font-size:12px;line-height:17px">' + escapeHtml(data.acronym) + '</div>' +
+      '<div style="height:1px;background:' + color + ';margin:6px 0 5px">&nbsp;</div>' +
+      (data.showUnit ? '<div style="font-size:12px;line-height:18px">' + escapeHtml(data.unit) + '</div>' : '') +
+      phoneHtml + '<div style="height:1px;background:' + color + ';margin:5px 0 6px">&nbsp;</div>' +
+      '<table cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-right:8px"><a href="' + escapeAttribute(safeSiteUrl) + '" target="_blank" rel="noopener noreferrer" style="font:bold 15px Arial;color:' + color + ';text-decoration:none">' + escapeHtml(data.siteText) + '</a></td>' + socialHtml + '</tr></table>' +
+      '</td></tr></table>';
+
+    $('validationSummary').textContent = result.errors.length ? result.errors[0] : '';
+  }
+
+  function socialDomain(key) {
+    const domains = {
+      instagram: 'instagram.com',
+      facebook: 'facebook.com',
+      youtube: 'youtube.com',
+      x: 'x.com',
+      linkedin: 'linkedin.com'
+    };
+    return domains[key];
+  }
+
+  function formatPhone(digits, isExtension) {
+    if (isExtension && digits.length === 8) return digits.slice(0, 3) + '-' + digits.slice(3);
+    if (digits.length === 8) return digits.slice(0, 4) + '-' + digits.slice(4);
+    if (digits.length === 9) return digits.slice(0, 1) + ' ' + digits.slice(1, 5) + '-' + digits.slice(5);
+    return digits;
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function escapeAttribute(value) {
+    return escapeHtml(value).replace(/`/g, '&#96;');
+  }
+
+  function createRequestId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, '');
+    return Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  }
+
+  function registerAndCopy() {
+    if (!appState.ready) return;
+    const result = collectPayload(true);
+    if (result.errors.length) {
+      $('validationSummary').textContent = result.errors[0];
+      showToast(result.errors[0]);
+      const invalid = document.querySelector('input.invalid');
+      if (invalid) invalid.focus();
+      return;
+    }
+
+    $('copy').disabled = true;
+    showLoadingModal();
+
+    google.script.run
+      .withSuccessHandler(onRegistered)
+      .withFailureHandler(function (error) {
+        $('copy').disabled = false;
+        showModalError('Não foi possível registrar a assinatura.', errorMessage(error));
+      })
+      .registrarAssinatura(result.payload);
+  }
+
+  async function onRegistered(result) {
+    appState.lastRegistered = result;
+    $('signature').innerHTML = result.html;
+    try {
+      await copyHtml(result.html, result.text);
+      markCopyConfirmed(result.id);
+      showModalSuccess(result);
+    } catch (error) {
+      showModalCopyFailure(result);
+    } finally {
+      $('copy').disabled = false;
+    }
+  }
+
+  function markCopyConfirmed(id) {
+    google.script.run
+      .withFailureHandler(function () {
+        showToast('A assinatura foi copiada, mas a confirmação final do status não pôde ser atualizada.');
+      })
+      .confirmarCopia(id);
+  }
+
+  async function retryLastCopy() {
+    if (!appState.lastRegistered) return;
+    $('retryCopy').disabled = true;
+    try {
+      await copyHtml(appState.lastRegistered.html, appState.lastRegistered.text);
+      markCopyConfirmed(appState.lastRegistered.id);
+      showModalSuccess(appState.lastRegistered);
+    } catch (error) {
+      showModalCopyFailure(appState.lastRegistered);
+    } finally {
+      $('retryCopy').disabled = false;
+    }
+  }
+
+  async function copyHtml(html, text) {
+    if (navigator.clipboard && window.ClipboardItem) {
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([text], { type: 'text/plain' })
+          })
+        ]);
+        return;
+      } catch (error) {
+        // O fallback abaixo cobre navegadores e iframes que bloqueiam ClipboardItem.
+      }
+    }
+
+    const temporary = document.createElement('div');
+    temporary.innerHTML = html;
+    temporary.contentEditable = 'true';
+    temporary.setAttribute('aria-hidden', 'true');
+    temporary.style.position = 'fixed';
+    temporary.style.left = '-10000px';
+    temporary.style.top = '0';
+    document.body.appendChild(temporary);
+
+    const range = document.createRange();
+    range.selectNodeContents(temporary);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const copied = document.execCommand('copy');
+    selection.removeAllRanges();
+    temporary.remove();
+    if (!copied) throw new Error('O navegador recusou a cópia.');
+  }
+
+  function protectPreview() {
+    const guard = $('previewGuard');
+    ['copy', 'cut', 'contextmenu', 'dragstart', 'selectstart'].forEach(function (eventName) {
+      guard.addEventListener(eventName, function (event) {
+        event.preventDefault();
+        showToast('Use “Copiar e registrar assinatura” para liberar a cópia.');
+      });
+    });
+
+    document.addEventListener('copy', function (event) {
+      const selection = window.getSelection();
+      if (!selection || !selection.anchorNode) return;
+      if (guard.contains(selection.anchorNode)) {
+        event.preventDefault();
+        showToast('Use “Copiar e registrar assinatura” para liberar a cópia.');
+      }
+    });
+  }
+
+  function showLoadingModal() {
+    $('modal').classList.remove('hide');
+    $('modalSpinner').classList.remove('hide');
+    $('modalIcon').className = 'modal-icon hide';
+    $('modalTitle').textContent = 'Registrando assinatura';
+    $('modalMessage').textContent = 'Aguarde enquanto os dados básicos e o seu e-mail autenticado são registrados na planilha.';
+    $('modalRecord').classList.add('hide');
+    $('retryCopy').classList.add('hide');
+    $('closeModal').classList.add('hide');
+  }
+
+  function showModalSuccess(result) {
+    $('modalSpinner').classList.add('hide');
+    $('modalIcon').className = 'modal-icon';
+    $('modalIcon').textContent = '✓';
+    $('modalTitle').textContent = 'Assinatura registrada e copiada';
+    $('modalMessage').textContent = 'O registro foi criado em ' + result.registeredAt + '. Agora cole a assinatura no Gmail.';
+    $('modalRecord').textContent = 'Registro: ' + result.id;
+    $('modalRecord').classList.remove('hide');
+    $('retryCopy').classList.add('hide');
+    $('closeModal').classList.remove('hide');
+    $('closeModal').focus();
+  }
+
+  function showModalCopyFailure(result) {
+    $('modalSpinner').classList.add('hide');
+    $('modalIcon').className = 'modal-icon error';
+    $('modalIcon').textContent = '!';
+    $('modalTitle').textContent = 'Registrada, mas ainda não copiada';
+    $('modalMessage').textContent = 'O registro foi salvo, porém o navegador bloqueou a área de transferência. Tente copiar novamente.';
+    $('modalRecord').textContent = 'Registro: ' + result.id;
+    $('modalRecord').classList.remove('hide');
+    $('retryCopy').classList.remove('hide');
+    $('closeModal').classList.remove('hide');
+    $('retryCopy').focus();
+  }
+
+  function showModalError(title, message) {
+    $('modal').classList.remove('hide');
+    $('modalSpinner').classList.add('hide');
+    $('modalIcon').className = 'modal-icon error';
+    $('modalIcon').textContent = '!';
+    $('modalTitle').textContent = title;
+    $('modalMessage').textContent = message;
+    $('modalRecord').classList.add('hide');
+    $('retryCopy').classList.add('hide');
+    $('closeModal').classList.remove('hide');
+    $('closeModal').focus();
+  }
+
+  function showFatalAccessError(message) {
+    document.querySelector('main').setAttribute('aria-busy', 'false');
+    $('userBadge').textContent = 'Acesso indisponível';
+    showModalError('Acesso não autorizado', message);
+    $('closeModal').classList.add('hide');
+  }
+
+  function closeModal() {
+    $('modal').classList.add('hide');
+    $('copy').focus();
+  }
+
+  function showToast(message) {
+    const toast = $('toast');
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(appState.toastTimer);
+    appState.toastTimer = setTimeout(function () {
+      toast.classList.remove('show');
+    }, 2600);
+  }
+
+  function errorMessage(error) {
+    if (!error) return 'Erro desconhecido.';
+    return error.message || String(error);
+  }
+</script>

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <base target="_top">
+  <title>Gerador de Assinatura GM-Rio</title>
+  <?!= include('Stylesheet'); ?>
+</head>
+<body>
+  <header class="top">
+    <div class="rio-mark" aria-hidden="true">RIO</div>
+    <div>
+      <h1>Gerador de assinatura</h1>
+      <p>Guarda Municipal do Rio de Janeiro</p>
+    </div>
+    <span id="userBadge" class="badge">Validando acesso…</span>
+  </header>
+
+  <main class="layout" aria-busy="true">
+    <section class="card editor" aria-label="Configuração da assinatura">
+      <div class="tabs" role="tablist" aria-label="Tipo de assinatura">
+        <button id="tabPersonal" class="on" type="button" role="tab" aria-selected="true">Assinatura pessoal</button>
+        <button id="tabSector" type="button" role="tab" aria-selected="false">Assinatura do setor</button>
+      </div>
+
+      <div class="intro">
+        <h2 id="formTitle">Dados da pessoa</h2>
+        <p id="formHelp">Preencha os dados da assinatura individual.</p>
+      </div>
+
+      <div id="presets" class="presets hide">
+        <span>Exemplos fictícios</span>
+        <div class="preset-buttons">
+          <button type="button" data-preset="equipe">Equipe Exemplo</button>
+          <button type="button" data-preset="servico">Serviço Exemplo</button>
+          <button type="button" data-preset="ponto-focal">Ponto Focal Exemplo</button>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div id="personalFields" class="full grid nested-grid">
+          <label class="full">Nome completo
+            <input id="name" maxlength="100" autocomplete="name" value="Servidor(a) Exemplo" required>
+          </label>
+          <label>Cargo / função
+            <input id="role" maxlength="160" value="Função Exemplo" required>
+          </label>
+          <label>Sigla do setor
+            <input id="acronym" maxlength="80" list="unitAcronyms" value="GM/EXEMPLO/UA1" required>
+          </label>
+          <label class="full">Nome do setor
+            <input id="unit" maxlength="160" list="unitNames" value="Unidade Administrativa Exemplo" required>
+          </label>
+        </div>
+
+        <div id="sectorFields" class="full grid nested-grid hide">
+          <label class="full">Nome da equipe, serviço ou ponto focal
+            <input id="sectorTitle" maxlength="100" value="Equipe Exemplo" required>
+          </label>
+          <label class="full">Descrição resumida
+            <input id="description" maxlength="160" value="Descrição institucional fictícia" required>
+          </label>
+          <label>Sigla da unidade
+            <input id="sectorAcronym" maxlength="80" list="unitAcronyms" value="GM/EXEMPLO/UA1" required>
+          </label>
+          <label>Unidade responsável
+            <input id="sectorUnit" maxlength="160" list="unitNames" value="Unidade Administrativa Exemplo" required>
+          </label>
+        </div>
+
+        <div class="full phone-group">
+          <span class="subtitle">Telefones</span>
+          <div class="phone-grid">
+            <div class="phone-card">
+              <label>Telefone principal
+                <span class="phone-prefix"><strong>+55 (21)</strong><input id="phone1" inputmode="numeric" maxlength="9" value="12345678" aria-describedby="phone1Help" required></span>
+                <span id="phone1Help" class="hint">Informe 8 dígitos para fixo ou 9 para celular.</span>
+              </label>
+              <label>Descrição opcional
+                <input id="phoneDescription1" maxlength="60" placeholder="Ex.: Atendimento">
+              </label>
+            </div>
+            <div class="phone-card">
+              <label>Telefone adicional 2
+                <input id="phone2" inputmode="numeric" maxlength="9" placeholder="5, 8 ou 9 dígitos">
+                <span class="hint">Com 5 dígitos, usa os 3 primeiros do principal.</span>
+              </label>
+              <label>Descrição opcional
+                <input id="phoneDescription2" maxlength="60" placeholder="Ex.: Recepção">
+              </label>
+            </div>
+            <div class="phone-card">
+              <label>Telefone adicional 3
+                <input id="phone3" inputmode="numeric" maxlength="9" placeholder="5, 8 ou 9 dígitos">
+                <span class="hint">Com 5 dígitos, usa os 3 primeiros do principal.</span>
+              </label>
+              <label>Descrição opcional
+                <input id="phoneDescription3" maxlength="60" placeholder="Ex.: Plantão">
+              </label>
+            </div>
+            <div class="phone-card">
+              <label>Telefone adicional 4
+                <input id="phone4" inputmode="numeric" maxlength="9" placeholder="5, 8 ou 9 dígitos">
+                <span class="hint">Com 5 dígitos, usa os 3 primeiros do principal.</span>
+              </label>
+              <label>Descrição opcional
+                <input id="phoneDescription4" maxlength="60" placeholder="Ex.: Ramal interno">
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <label>Texto do site
+          <input id="siteText" maxlength="80" value="guardamunicipal.prefeitura.rio" required>
+        </label>
+        <label>Link do site
+          <input id="siteUrl" type="url" maxlength="300" value="https://guardamunicipal.prefeitura.rio/" required>
+          <span class="hint">Somente HTTPS em domínio terminado em .rio.</span>
+        </label>
+      </div>
+
+      <details open>
+        <summary>Identidade visual GM-Rio</summary>
+        <div class="grid">
+          <div class="full gm-identity">
+            <img id="gmLogoPreview" alt="Marca da Guarda Municipal do Rio de Janeiro">
+            <div><strong>Guarda Municipal do Rio de Janeiro</strong><span>Modelo único desta versão</span></div>
+          </div>
+          <label>Link da logo
+            <input id="logoLink" type="url" maxlength="300" value="https://guardamunicipal.prefeitura.rio/" required>
+            <span class="hint">Somente HTTPS em domínio terminado em .rio.</span>
+          </label>
+          <label>Cor institucional
+            <input id="color" type="color" value="#00558c">
+          </label>
+        </div>
+      </details>
+
+      <details>
+        <summary>Redes sociais e links</summary>
+        <p class="section-help">Cada link é limitado ao domínio da respectiva rede.</p>
+        <div id="socials" class="socials"></div>
+      </details>
+
+      <datalist id="unitAcronyms"></datalist>
+      <datalist id="unitNames"></datalist>
+    </section>
+
+    <aside class="card preview" aria-label="Pré-visualização da assinatura">
+      <div class="preview-head">
+        <small>PRÉ-VISUALIZAÇÃO</small>
+        <h2>Como ficará no e-mail</h2>
+        <p>Esta área não permite seleção ou cópia direta. Use o botão para registrar e copiar.</p>
+      </div>
+      <div id="previewGuard" class="canvas" aria-label="Assinatura protegida contra cópia direta">
+        <div id="signature" class="signature"></div>
+      </div>
+      <div class="controls">
+        <label><input id="showUnit" type="checkbox" checked> Mostrar unidade</label>
+      </div>
+      <button id="copy" class="copy" type="button" disabled>Copiar e registrar assinatura</button>
+      <p class="note">Após o registro: Gmail → Configurações → Assinatura → cole com Ctrl + V.</p>
+      <div id="validationSummary" class="validation-summary" role="status" aria-live="polite"></div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div id="modal" class="modal hide" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-panel">
+      <div id="modalSpinner" class="spinner" aria-hidden="true"></div>
+      <div id="modalIcon" class="modal-icon hide" aria-hidden="true"></div>
+      <h2 id="modalTitle">Registrando assinatura</h2>
+      <p id="modalMessage">Aguarde enquanto os dados básicos e o seu e-mail autenticado são registrados na planilha.</p>
+      <p id="modalRecord" class="record-id hide"></p>
+      <div class="modal-actions">
+        <button id="retryCopy" class="secondary-button hide" type="button">Tentar copiar novamente</button>
+        <button id="closeModal" class="primary-button hide" type="button">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <?!= include('JavaScript'); ?>
+</body>
+</html>
