@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0f5ea8">
+
+  <title>Editor de Assinaturas | GM-Rio</title>
+
+  <style>
+    :root {
+      --blue: #0f5ea8;
+      --blue-dark: #0b4d8c;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --background: #f7f9fc;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background: var(--background);
+    }
+
+    main {
+      width: 100%;
+      max-width: 520px;
+      text-align: center;
+    }
+
+    .card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 46px 38px;
+      box-shadow: 0 12px 35px rgba(15, 39, 66, 0.08);
+    }
+
+    .brand {
+      margin-bottom: 26px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--blue);
+      letter-spacing: 0.02em;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 29px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    p {
+      margin: 16px auto 28px;
+      max-width: 390px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 24px;
+      border-radius: 10px;
+      color: #ffffff;
+      background: var(--blue);
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 700;
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+
+    .button:hover {
+      background: var(--blue-dark);
+      transform: translateY(-1px);
+    }
+
+    .redirect {
+      margin-top: 22px;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+
+    footer {
+      margin-top: 18px;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+
+    @media (max-width: 520px) {
+      .card {
+        padding: 38px 24px;
+      }
+
+      h1 {
+        font-size: 25px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <section class="card">
+      <div class="brand">GM-RIO · EDITOR DE ASSINATURAS</div>
+
+      <h1>Esta versão foi descontinuada.</h1>
+
+      <p>
+        Acesse a nova versão utilizando sua conta institucional
+        <strong>@gm.rio</strong>.
+      </p>
+
+      <a
+        class="button"
+        href="https://script.google.com/a/macros/gm.rio/s/AKfycbyOeijX8DYgIunBvfnt00TdYYvHL6jG8IdSwqn7uG4fJ5sPL0ee1lMUcDlB0vLUZSue3g/exec"
+      >
+        Acessar nova versão
+      </a>
+
+      <div class="redirect">
+        Redirecionamento automático em <span id="seconds">8</span>s
+      </div>
+    </section>
+
+    <footer>
+      Guarda Municipal do Rio de Janeiro
+    </footer>
+  </main>
+
+  <script>
+    const newUrl =
+      "https://script.google.com/a/macros/gm.rio/s/AKfycbyOeijX8DYgIunBvfnt00TdYYvHL6jG8IdSwqn7uG4fJ5sPL0ee1lMUcDlB0vLUZSue3g/exec";
+
+    let seconds = 8;
+    const counter = document.getElementById("seconds");
+
+    const interval = setInterval(() => {
+      seconds--;
+      counter.textContent = seconds;
+
+      if (seconds <= 0) {
+        clearInterval(interval);
+        window.location.replace(newUrl);
+      }
+    }, 1000);
+  </script>
+</body>
+</html>
