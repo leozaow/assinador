@@ -3,7 +3,9 @@ const APP_CONFIG = Object.freeze({
   spreadsheetProperty: 'SPREADSHEET_ID',
   recordsSheet: 'REGISTROS',
   unitsSheet: 'UNIDADES',
-  templateVersion: 'GM-RIO-1.1.0',
+  assetsSheet: 'ASSETS',
+  templateVersion: 'GM-RIO-1.3.0',
+  assetMaxBytes: 1048576,
   assetBaseUrl: 'https://leozaow.github.io/assinador/',
   logoUrl: 'https://leozaow.github.io/assinador/orgaos-entidades/gm-rio.png',
   defaultLogoLink: 'https://guardamunicipal.prefeitura.rio/',
@@ -11,6 +13,18 @@ const APP_CONFIG = Object.freeze({
   defaultSiteText: 'guardamunicipal.prefeitura.rio',
   defaultColor: '#00558c'
 });
+
+const ASSET_HEADERS = Object.freeze(['CHAVE', 'ARQUIVO_DRIVE', 'DESCRICAO']);
+
+const ASSET_DEFAULTS = Object.freeze([
+  ['logo_gm', '', 'Logo principal da Guarda Municipal'],
+  ['icon_site', '', 'Ícone do site'],
+  ['icon_instagram', '', 'Ícone do Instagram'],
+  ['icon_facebook', '', 'Ícone do Facebook'],
+  ['icon_youtube', '', 'Ícone do YouTube'],
+  ['icon_x', '', 'Ícone do X'],
+  ['icon_linkedin', '', 'Ícone do LinkedIn']
+]);
 
 const RECORD_HEADERS = Object.freeze([
   'ID_REGISTRO',
@@ -117,7 +131,7 @@ function configurarProjeto() {
 
   return {
     spreadsheetId: spreadsheet.getId(),
-    sheets: [APP_CONFIG.recordsSheet, APP_CONFIG.unitsSheet]
+    sheets: [APP_CONFIG.recordsSheet, APP_CONFIG.unitsSheet, APP_CONFIG.assetsSheet]
   };
 }
 
@@ -127,12 +141,14 @@ function getBootstrapData() {
   const spreadsheet = obterPlanilha_();
   garantirEstrutura_(spreadsheet);
 
+  const assets = carregarAssets_(spreadsheet);
+
   return {
     email: email,
     units: lerUnidades_(spreadsheet),
     config: {
       templateVersion: APP_CONFIG.templateVersion,
-      logoUrl: APP_CONFIG.logoUrl,
+      logoUrl: assets.logo_gm,
       defaultLogoLink: APP_CONFIG.defaultLogoLink,
       defaultSiteUrl: APP_CONFIG.defaultSiteUrl,
       defaultSiteText: APP_CONFIG.defaultSiteText,
@@ -141,7 +157,7 @@ function getBootstrapData() {
         return {
           key: key,
           label: SOCIAL_CONFIG[key].label,
-          iconUrl: SOCIAL_CONFIG[key].iconUrl,
+          iconUrl: assets['icon_' + key] || SOCIAL_CONFIG[key].iconUrl,
           defaultUrl: SOCIAL_CONFIG[key].defaultUrl
         };
       })
@@ -156,9 +172,9 @@ function getBootstrapData() {
 function registrarAssinatura(payload) {
   const email = exigirUsuarioGmRio_();
   const dados = validarPayload_(payload);
-  const assinatura = montarAssinatura_(dados);
-  const hash = calcularSha256_(assinatura.html);
   const spreadsheet = obterPlanilha_();
+  const assinatura = montarAssinatura_(dados, spreadsheet);
+  const hash = calcularSha256_(assinatura.html);
   const sheet = obterOuCriarRegistros_(spreadsheet);
   const lock = LockService.getScriptLock();
 
@@ -283,6 +299,7 @@ function obterPlanilha_() {
 function garantirEstrutura_(spreadsheet) {
   obterOuCriarRegistros_(spreadsheet);
   obterOuCriarUnidades_(spreadsheet);
+  obterOuCriarAssets_(spreadsheet);
 }
 
 function obterOuCriarRegistros_(spreadsheet) {
@@ -346,6 +363,189 @@ function obterOuCriarUnidades_(spreadsheet) {
   sheet.setColumnWidth(1, 220);
   sheet.setColumnWidth(2, 360);
   return sheet;
+}
+
+function obterOuCriarAssets_(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName(APP_CONFIG.assetsSheet);
+  if (!sheet) sheet = spreadsheet.insertSheet(APP_CONFIG.assetsSheet);
+
+  const headers = sheet.getRange(1, 1, 1, ASSET_HEADERS.length).getDisplayValues()[0];
+  const validHeaders = ASSET_HEADERS.every(function (header, index) {
+    return headers[index] === header;
+  });
+
+  if (!validHeaders) {
+    if (sheet.getLastRow() > 0 && headers.some(String)) {
+      throw new Error('A aba ASSETS possui cabeçalhos incompatíveis. Use CHAVE, ARQUIVO_DRIVE e DESCRICAO.');
+    }
+    sheet.getRange(1, 1, 1, ASSET_HEADERS.length).setValues([ASSET_HEADERS]);
+  }
+
+  if (sheet.getLastRow() === 1) {
+    sheet.getRange(2, 1, ASSET_DEFAULTS.length, ASSET_HEADERS.length).setValues(ASSET_DEFAULTS);
+  } else {
+    const existingKeys = new Set(
+      sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 1), 1)
+        .getDisplayValues()
+        .flat()
+        .map(function (value) { return String(value).trim(); })
+        .filter(Boolean)
+    );
+    const missing = ASSET_DEFAULTS.filter(function (row) { return !existingKeys.has(row[0]); });
+    if (missing.length) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, missing.length, ASSET_HEADERS.length).setValues(missing);
+    }
+  }
+
+  sheet.getRange('A1:C1')
+    .setBackground('#00558c')
+    .setFontColor('#ffffff')
+    .setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidth(1, 180);
+  sheet.setColumnWidth(2, 430);
+  sheet.setColumnWidth(3, 300);
+  return sheet;
+}
+
+function carregarAssets_(spreadsheet) {
+  const sheet = obterOuCriarAssets_(spreadsheet);
+  const values = sheet.getLastRow() < 2
+    ? []
+    : sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getDisplayValues();
+
+  const configured = {};
+  values.forEach(function (row) {
+    const key = String(row[0] || '').trim();
+    if (key) configured[key] = String(row[1] || '').trim();
+  });
+
+  const fallbacks = obterFallbacksAssets_();
+  const result = {};
+  Object.keys(fallbacks).forEach(function (key) {
+    result[key] = configured[key]
+      ? carregarImagemDriveComoUrlPublica_(configured[key], key)
+      : fallbacks[key];
+  });
+  return result;
+}
+
+function obterFallbacksAssets_() {
+  const result = { logo_gm: APP_CONFIG.logoUrl };
+  Object.keys(SOCIAL_CONFIG).forEach(function (key) {
+    result['icon_' + key] = SOCIAL_CONFIG[key].iconUrl;
+  });
+  return result;
+}
+
+/**
+ * Converte um link/ID do Drive em uma URL HTTPS remota da infraestrutura
+ * Google. Diferentemente da versão 1.2, a imagem NÃO é transformada em
+ * data URI/base64. Isso mantém o <img src> como recurso externo e evita que
+ * o navegador/Gmail precise transportar o PNG como parte MIME da mensagem.
+ *
+ * IMPORTANTE: o próprio suporte do Gmail exige que imagens do Drive usadas
+ * em assinaturas estejam públicas. Portanto o arquivo precisa estar como
+ * "Qualquer pessoa com o link" (visualizador) ou equivalente.
+ */
+function carregarImagemDriveComoUrlPublica_(value, assetKey) {
+  const fileId = extrairIdDrive_(value);
+  if (!fileId) {
+    throw new Error('ASSETS: o valor de ' + assetKey + ' não contém um ID ou link válido do Google Drive.');
+  }
+
+  let file;
+  try {
+    file = DriveApp.getFileById(fileId);
+  } catch (error) {
+    throw new Error('ASSETS: não foi possível acessar ' + assetKey + ' no Drive. Verifique o ID e a permissão do arquivo.');
+  }
+
+  const mimeType = String(file.getMimeType() || '').toLowerCase();
+  if (!/^image\/(png|jpeg|gif|webp)$/.test(mimeType)) {
+    throw new Error('ASSETS: ' + assetKey + ' deve ser PNG, JPEG, GIF ou WebP. Tipo atual: ' + mimeType + '.');
+  }
+
+  const size = Number(file.getSize() || 0);
+  if (size <= 0 || size > APP_CONFIG.assetMaxBytes) {
+    throw new Error('ASSETS: ' + assetKey + ' deve ter até 1 MB. Tamanho atual: ' + size + ' bytes.');
+  }
+
+  const access = file.getSharingAccess();
+  const isPublic = access === DriveApp.Access.ANYONE || access === DriveApp.Access.ANYONE_WITH_LINK;
+  if (!isPublic) {
+    throw new Error(
+      'ASSETS: ' + assetKey + ' não está público. No Drive, altere o acesso geral para "Qualquer pessoa com o link" como Leitor. ' +
+      'Isso é necessário para que destinatários externos consigam carregar a imagem da assinatura.'
+    );
+  }
+
+  if (file.getSecurityUpdateEnabled() && file.getResourceKey()) {
+    throw new Error(
+      'ASSETS: ' + assetKey + ' exige uma chave de recurso do Drive. Para este asset público de assinatura, desative a atualização de segurança do link ' +
+      'ou use um arquivo novo criado especificamente para a assinatura.'
+    );
+  }
+
+  // Endpoint de entrega de imagem da infraestrutura googleusercontent.
+  // Mantemos a origem remota no HTML; width/height continuam controlados
+  // pela própria assinatura. O sufixo limita apenas a resolução de entrega.
+  return 'https://lh3.googleusercontent.com/d/' + encodeURIComponent(fileId) + '=w1000';
+}
+
+function extrairIdDrive_(value) {
+  const raw = String(value || '').trim();
+  if (/^[A-Za-z0-9_-]{20,}$/.test(raw)) return raw;
+
+  const patterns = [
+    /\/file\/d\/([A-Za-z0-9_-]{20,})/i,
+    /[?&]id=([A-Za-z0-9_-]{20,})/i,
+    /\/d\/([A-Za-z0-9_-]{20,})/i
+  ];
+  for (let i = 0; i < patterns.length; i++) {
+    const match = raw.match(patterns[i]);
+    if (match) return match[1];
+  }
+  return '';
+}
+
+/**
+ * Diagnóstico opcional. Execute no editor para validar os arquivos informados
+ * na aba ASSETS antes de publicar uma nova versão do Web App.
+ */
+function testarAssetsDrive() {
+  exigirUsuarioGmRio_();
+  const spreadsheet = obterPlanilha_();
+  const sheet = obterOuCriarAssets_(spreadsheet);
+  const values = sheet.getLastRow() < 2
+    ? []
+    : sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getDisplayValues();
+
+  return values.filter(function (row) {
+    return String(row[1] || '').trim();
+  }).map(function (row) {
+    const key = String(row[0] || '').trim();
+    const id = extrairIdDrive_(row[1]);
+    if (!id) return { key: key, ok: false, error: 'ID/link inválido' };
+    try {
+      const file = DriveApp.getFileById(id);
+      const publicUrl = carregarImagemDriveComoUrlPublica_(id, key);
+      return {
+        key: key,
+        ok: true,
+        name: file.getName(),
+        mimeType: file.getMimeType(),
+        size: file.getSize(),
+        id: id,
+        sharingAccess: String(file.getSharingAccess()),
+        sharingPermission: String(file.getSharingPermission()),
+        securityUpdateEnabled: file.getSecurityUpdateEnabled(),
+        publicUrl: publicUrl
+      };
+    } catch (error) {
+      return { key: key, ok: false, error: String(error.message || error) };
+    }
+  });
 }
 
 function lerUnidades_(spreadsheet) {
@@ -551,7 +751,8 @@ function validarUrlSocial_(url, hostRule, label) {
   return url;
 }
 
-function montarAssinatura_(dados) {
+function montarAssinatura_(dados, spreadsheet) {
+  const assets = carregarAssets_(spreadsheet || obterPlanilha_());
   const color = escaparHtml_(dados.color);
   const phonesHtml = dados.phones.map(function (phone) {
     return '<div style="font-size:12px;line-height:18px">' +
@@ -565,14 +766,14 @@ function montarAssinatura_(dados) {
   }).map(function (social) {
     return '<td style="padding:0 4px">' +
       '<a href="' + escaparAtributo_(social.url) + '" target="_blank" rel="noopener noreferrer">' +
-      '<img src="' + escaparAtributo_(social.iconUrl) + '" width="24" height="24" alt="' +
+      '<img src="' + escaparAtributo_(assets['icon_' + social.key] || social.iconUrl) + '" width="24" height="24" alt="' +
       escaparAtributo_(social.label) + '" style="display:block;border:0"></a></td>';
   }).join('');
 
   const html = '<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;color:' + color + '">' +
     '<tr><td style="width:116px;padding:0 18px 0 0;vertical-align:middle;text-align:center">' +
     '<a href="' + escaparAtributo_(dados.logoLink) + '" target="_blank" rel="noopener noreferrer">' +
-    '<img src="' + escaparAtributo_(APP_CONFIG.logoUrl) + '" width="105" alt="Guarda Municipal do Rio de Janeiro" style="display:block;width:105px;height:auto;border:0"></a></td>' +
+    '<img src="' + escaparAtributo_(assets.logo_gm) + '" width="105" alt="Guarda Municipal do Rio de Janeiro" style="display:block;width:105px;height:auto;border:0"></a></td>' +
     '<td style="width:390px;vertical-align:middle">' +
     '<div style="font-size:20px;line-height:23px;font-weight:700;color:' + color + '">' + escaparHtml_(dados.title) + '</div>' +
     '<div style="font-size:12px;line-height:17px">' + escaparHtml_(dados.secondLine) + '</div>' +

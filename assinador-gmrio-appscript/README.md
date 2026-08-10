@@ -21,7 +21,8 @@ Projeto pronto para ser instalado em uma Planilha Google e publicado como Web Ap
 - preenchimento automático entre sigla e nome quando uma sugestão exata é escolhida;
 - URLs de site e logo limitadas a domínios terminados em `.rio`;
 - links sociais limitados ao domínio da respectiva rede;
-- imagens públicas carregadas do GitHub Pages informado.
+- imagens carregadas preferencialmente do Google Drive como recursos HTTPS externos, sem base64/Blob no HTML;
+- fallback para os arquivos atuais do GitHub Pages enquanto uma chave da aba `ASSETS` estiver vazia.
 
 ## Arquivos do Apps Script
 
@@ -65,7 +66,8 @@ Também é possível enviar os arquivos com `clasp`, caso sua equipe já utilize
 3. Autorize o acesso solicitado usando a conta `@gm.rio`.
 4. Volte à planilha e confirme a criação das abas:
    - `REGISTROS`;
-   - `UNIDADES`.
+   - `UNIDADES`;
+   - `ASSETS`.
 
 A função salva o ID da planilha em `ScriptProperties`. Por isso o Web App consegue gravar sem depender de uma planilha ativa.
 
@@ -143,12 +145,67 @@ Se a cópia automática falhar depois do registro, o modal oferece **Tentar copi
 
 A checagem existe tanto no navegador quanto no servidor. O servidor é a autoridade final.
 
-## Imagens utilizadas
+## Imagens pelo Google Drive — modo externo sem anexo visível
 
-- Logo GM-Rio: `https://leozaow.github.io/assinador/orgaos-entidades/gm-rio.png`
-- Ícones: `https://leozaow.github.io/assinador/icones/<rede>.png`
+A versão `GM-RIO-1.3.0` mantém a aba `ASSETS`, mas muda completamente a forma de entregar as imagens.
 
-Essas imagens precisam permanecer públicas e imutáveis. A melhor prática de produção é copiar os ativos para uma hospedagem institucional controlada e atualizar `APP_CONFIG` e `SOCIAL_CONFIG` em `Code.gs`.
+Na versão 1.2 o Apps Script lia o arquivo do Drive e o convertia em `data:image/...;base64`. O teste no Gmail mostrou que esse conteúdo podia ser persistido como parte MIME inline e aparecer para o destinatário como `image.png`.
+
+Na versão 1.3 isso foi removido. O HTML final volta a possuir apenas imagens remotas:
+
+```html
+<img src="https://lh3.googleusercontent.com/d/ID_DO_ARQUIVO=w1000">
+```
+
+Assim, o PNG não viaja no HTML copiado como Blob/base64. O Gmail recebe uma referência HTTPS, o mesmo princípio utilizado quando uma assinatura aponta para uma imagem hospedada externamente.
+
+### Requisito indispensável
+
+O arquivo do Drive precisa estar com **Acesso geral → Qualquer pessoa com o link → Leitor**. Isso não concede edição e deve ser usado somente para assets públicos, como logotipos e ícones institucionais.
+
+Se a política do Google Workspace impedir compartilhamento público, esta modalidade não poderá ser usada para destinatários externos. Nesse caso será necessário usar uma hospedagem pública institucional.
+
+A aba `ASSETS` continua aceitando o link normal do Drive ou somente o ID:
+
+```text
+https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view?usp=sharing
+```
+
+ou:
+
+```text
+1AbCdEfGhIjKlMnOpQrStUvWxYz
+```
+
+O servidor valida:
+
+- existência e acesso ao arquivo;
+- MIME PNG/JPEG/GIF/WebP;
+- tamanho máximo de 1 MB;
+- compartilhamento público (`ANYONE` ou `ANYONE_WITH_LINK`);
+- ausência de chave de recurso obrigatória do Drive.
+
+Se uma chave da aba `ASSETS` ficar vazia, o asset correspondente continua usando o GitHub Pages como fallback durante a homologação.
+
+### A cópia também foi alterada
+
+O botão **Copiar e registrar assinatura** agora prioriza `ClipboardItem` com o HTML puro. Isso é deliberado: queremos preservar `src="https://..."` e evitar que a seleção de um DOM já renderizado faça o Chrome copiar a própria imagem como arquivo inline.
+
+A cópia nativa via `execCommand('copy')` permanece somente como fallback para ambientes que bloqueiem a Clipboard API.
+
+### Homologação
+
+Antes da implantação geral:
+
+1. configure apenas `logo_gm` no Drive;
+2. execute `testarAssetsDrive()` e confirme `ok: true`;
+3. gere e copie a assinatura;
+4. cole nas configurações do Gmail e salve;
+5. envie para uma conta externa;
+6. confirme que a logo aparece e que **não existe o chip `image.png`/anexo**;
+7. repita no Outlook e no Gmail móvel, se esses clientes fizerem parte do uso real.
+
+O endereço `lh3.googleusercontent.com/d/...` é uma forma prática de entrega de arquivos públicos pela infraestrutura Google, porém não é apresentado pelo Google como uma API pública contratual de hospedagem. Por isso esta versão deve ser homologada antes de substituir definitivamente uma hospedagem estática convencional.
 
 ## Observação sobre bloqueio de cópia
 

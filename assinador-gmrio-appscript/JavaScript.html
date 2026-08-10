@@ -460,6 +460,9 @@
   }
 
   async function copyHtml(html, text) {
+    // Nesta versão as imagens permanecem como URLs HTTPS remotas. Gravamos
+    // primeiro o HTML puro no clipboard para preservar o atributo src e
+    // evitar que o Chrome converta a imagem renderizada em um arquivo inline.
     if (navigator.clipboard && window.ClipboardItem) {
       try {
         await navigator.clipboard.write([
@@ -470,10 +473,17 @@
         ]);
         return;
       } catch (error) {
-        // O fallback abaixo cobre navegadores e iframes que bloqueiam ClipboardItem.
+        // Alguns navegadores/políticas corporativas bloqueiam ClipboardItem.
+        // Nesse caso usamos a cópia nativa como fallback.
       }
     }
 
+    const copiedNatively = await copyHtmlFromDom(html);
+    if (copiedNatively) return;
+    throw new Error('O navegador recusou a cópia da assinatura.');
+  }
+
+  async function copyHtmlFromDom(html) {
     const temporary = document.createElement('div');
     temporary.innerHTML = html;
     temporary.contentEditable = 'true';
@@ -481,17 +491,38 @@
     temporary.style.position = 'fixed';
     temporary.style.left = '-10000px';
     temporary.style.top = '0';
+    temporary.style.width = '700px';
+    temporary.style.background = '#ffffff';
     document.body.appendChild(temporary);
 
-    const range = document.createRange();
-    range.selectNodeContents(temporary);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    const copied = document.execCommand('copy');
-    selection.removeAllRanges();
-    temporary.remove();
-    if (!copied) throw new Error('O navegador recusou a cópia.');
+    try {
+      await waitForSignatureImages(temporary);
+      const range = document.createRange();
+      range.selectNodeContents(temporary);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      const copied = document.execCommand('copy');
+      selection.removeAllRanges();
+      return copied;
+    } finally {
+      temporary.remove();
+    }
+  }
+
+  function waitForSignatureImages(container) {
+    const images = Array.from(container.querySelectorAll('img'));
+    if (!images.length) return Promise.resolve();
+
+    return Promise.all(images.map(function (image) {
+      if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+      return new Promise(function (resolve) {
+        const done = function () { resolve(); };
+        image.addEventListener('load', done, { once: true });
+        image.addEventListener('error', done, { once: true });
+        setTimeout(done, 1500);
+      });
+    }));
   }
 
   function protectPreview() {

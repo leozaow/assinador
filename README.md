@@ -270,3 +270,7 @@ Qualquer alteração deve preservar:
 4. a transformação de caminhos relativos em URLs absolutas;
 5. a cópia simultânea nos formatos HTML e texto;
 6. o funcionamento sem build, servidor ou dependências externas.
+
+## Variante Google Apps Script com imagens do Drive
+
+A pasta `assinador-gmrio-appscript/` contém uma variante interna para Google Workspace. A versão `GM-RIO-1.3.0` lê os IDs/links dos assets no Google Drive e gera referências HTTPS externas, evitando Blob/base64 no HTML e reduzindo o risco de as imagens aparecerem como anexos visíveis. Consulte `assinador-gmrio-appscript/DRIVE-SEM-ANEXOS.md`.
